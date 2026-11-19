@@ -1,0 +1,35 @@
+# VoteTrace API on Render. The site itself is deployed separately on Vercel.
+# This service runs in staging so it can store photos on a disk without Supabase.
+# Production mode refuses to start until Postgres and a private Supabase bucket exist.
+services:
+  - type: web
+    name: verivote-api
+    runtime: python
+    rootDir: backend
+    plan: starter
+    buildCommand: pip install -r requirements.txt -r requirements-ocr.txt && pip install --no-deps rapidocr_onnxruntime==1.4.4
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT --no-access-log
+    healthCheckPath: /api/v1/health
+    disk:
+      name: verivote-data
+      mountPath: /var/verivote
+      sizeGB: 1
+    envVars:
+      - key: APP_ENV
+        value: staging
+      - key: DIRECTORY_SOURCE
+        value: demo
+      - key: EVIDENCE_STORAGE
+        value: local
+      - key: EVIDENCE_LOCAL_DIR
+        value: /var/verivote/evidence
+      - key: DEV_DATABASE_PATH
+        value: /var/verivote/verivote.sqlite3
+      - key: OCR_PROVIDER
+        value: rapidocr
+      - key: TRUST_PROXY_HEADERS
+        value: "true"
+      - key: AUTH_JWT_SECRET
+        generateValue: true
+      - key: CORS_ORIGINS
+        sync: false

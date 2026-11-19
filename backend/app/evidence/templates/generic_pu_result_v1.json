@@ -1,0 +1,121 @@
+{
+  "id": "generic-pu-result-v1",
+  "name": "Generic polling-unit result sheet",
+  "is_demo": true,
+  "notice": "Demonstration template modelled on the common structure of polling-unit result sheets. It is not a certified INEC form layout. Confirm field labels and rules against the official form for each election before relying on it.",
+  "fields": [
+    {
+      "key": "polling_unit_code",
+      "label": "Polling unit code",
+      "kind": "text",
+      "required": true,
+      "aliases": ["polling unit code", "pu code", "polling unit no", "polling unit number", "code"],
+      "pattern": "^[A-Z0-9][A-Z0-9/-]{3,39}$"
+    },
+    {
+      "key": "election_label",
+      "label": "Election",
+      "kind": "text",
+      "required": false,
+      "aliases": ["election", "election type"]
+    },
+    {
+      "key": "registered_voters",
+      "label": "Number of voters on the register",
+      "kind": "integer",
+      "required": false,
+      "aliases": ["voters on the register", "registered voters", "number of registered voters"]
+    },
+    {
+      "key": "accredited_voters",
+      "label": "Number of accredited voters",
+      "kind": "integer",
+      "required": true,
+      "aliases": ["accredited voters", "number of accredited voters", "total accredited"]
+    },
+    {
+      "key": "rejected_votes",
+      "label": "Total rejected votes",
+      "kind": "integer",
+      "required": true,
+      "aliases": ["rejected ballots", "rejected votes", "total rejected"]
+    },
+    {
+      "key": "total_valid_votes",
+      "label": "Total valid votes",
+      "kind": "integer",
+      "required": true,
+      "aliases": ["total valid votes", "valid votes"]
+    },
+    {
+      "key": "total_votes_cast",
+      "label": "Total votes cast",
+      "kind": "integer",
+      "required": true,
+      "aliases": ["total votes cast", "votes cast", "total used ballot papers"]
+    }
+  ],
+  "party_votes": { "enabled": true, "required": true },
+  "rules": [
+    {
+      "id": "required_fields",
+      "type": "required",
+      "severity": "error",
+      "description": "Every field the form requires is present."
+    },
+    {
+      "id": "non_negative_integers",
+      "type": "non_negative_integers",
+      "severity": "error",
+      "description": "Every count is a whole number of zero or more."
+    },
+    {
+      "id": "valid_votes_equal_party_sum",
+      "type": "sum_equals",
+      "target": "total_valid_votes",
+      "terms": ["party:*"],
+      "severity": "error",
+      "description": "Total valid votes equal the sum of the party votes."
+    },
+    {
+      "id": "cast_equals_valid_plus_rejected",
+      "type": "sum_equals",
+      "target": "total_votes_cast",
+      "terms": ["total_valid_votes", "rejected_votes"],
+      "severity": "error",
+      "description": "Total votes cast equal valid votes plus rejected votes."
+    },
+    {
+      "id": "cast_not_above_accredited",
+      "type": "less_or_equal",
+      "left": "total_votes_cast",
+      "right": "accredited_voters",
+      "severity": "error",
+      "description": "Total votes cast do not exceed the number of accredited voters."
+    },
+    {
+      "id": "accredited_not_above_registered",
+      "type": "less_or_equal",
+      "left": "accredited_voters",
+      "right": "registered_voters",
+      "severity": "warning",
+      "description": "Accredited voters do not exceed voters on the register."
+    },
+    {
+      "id": "polling_unit_matches_submission",
+      "type": "matches_submission",
+      "field": "polling_unit_code",
+      "against": "polling_unit_code",
+      "severity": "error",
+      "description": "The polling-unit code on the sheet matches the polling unit selected for the submission."
+    },
+    {
+      "id": "election_matches_submission",
+      "type": "matches_submission",
+      "field": "election_label",
+      "against": "election_label",
+      "severity": "warning",
+      "description": "The election named on the sheet matches the election selected for the submission."
+    }
+  ]
+}
