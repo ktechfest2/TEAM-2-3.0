@@ -30,6 +30,15 @@ A result sheet photographed at a polling unit becomes a fingerprinted, OCR-read,
 [API](#api-overview) ·
 [Roadmap](#honest-scope-and-roadmap)
 
+**Live site (staging, demonstration data):** <https://team-2-3-0.vercel.app/>
+
+**Staff sign-in:** <https://team-2-3-0.vercel.app/admin/sign-in>
+
+- Administrator email: `uoguntola@gmail.com`
+- Password: shared privately with the team. It is not stored in this repository.
+
+The live site uses fictional demonstration data. It is not an official election result.
+
 </div>
 
 ---
