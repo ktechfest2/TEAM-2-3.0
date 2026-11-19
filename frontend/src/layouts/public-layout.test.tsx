@@ -24,6 +24,33 @@ describe('public layout', () => {
     expect(screen.queryByRole('navigation', { name: 'Mobile' })).not.toBeInTheDocument()
   })
 
+  it('lists the participate links once in the mobile menu, without repeating the report link', async () => {
+    const user = userEvent.setup()
+    installMockApi()
+    renderRoute('/verification')
+    await user.click(await screen.findByRole('button', { name: 'More' }))
+    const mobileNav = await screen.findByRole('navigation', { name: 'Mobile' })
+    const hrefOf = (name: string) => within(mobileNav).getByRole('link', { name }).getAttribute('href')
+    expect(hrefOf('Incident summary')).toBe('/incidents')
+    expect(hrefOf('USSD and SMS access')).toBe('/phone-access')
+    expect(hrefOf('Submit evidence')).toBe('/evidence/submit')
+    expect(hrefOf('Staff sign-in')).toBe('/admin')
+    expect(within(mobileNav).getAllByRole('link', { name: REPORT_INCIDENT_NAV.label })).toHaveLength(1)
+  })
+
+  it('shows the bottom tab bar with Home, Results, Find, Report and More', async () => {
+    installMockApi()
+    renderRoute('/verification')
+    const tabs = await screen.findByRole('navigation', { name: 'Sections' })
+    const hrefOf = (name: string) => within(tabs).getByRole('link', { name }).getAttribute('href')
+    expect(hrefOf('Home')).toBe('/')
+    expect(hrefOf('Results')).toBe('/results')
+    expect(hrefOf('Find')).toBe('/polling-units')
+    expect(hrefOf('Report')).toBe('/report-incident')
+    expect(within(tabs).getByRole('button', { name: 'More' })).toBeInTheDocument()
+    expect(within(tabs).getAllByRole('listitem')).toHaveLength(5)
+  })
+
   it('shows the home page actions and latest updates', async () => {
     installMockApi()
     renderRoute('/')

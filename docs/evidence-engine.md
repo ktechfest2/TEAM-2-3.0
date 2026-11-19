@@ -81,7 +81,10 @@ The engine combines four components:
 
 1. **OCR uncertainty**: fields that came from OCR and still require review.
 2. **Discrepancy**: conflicting values between submissions and duplicate evidence from different accounts.
-3. **Statistical**: an Isolation Forest (fixed random seed) over four ratios: turnout of accredited voters, rejected-ballot share, leading-party share and accreditation of registered voters. It runs only when at least `ANOMALY_MIN_SAMPLES` reliable reference records exist. Reliable means human-reviewed (`reviewed` or `verified`), one per other polling unit in the same election. With fewer records, it reports `insufficient_data` and raises no statistical alert.
+3. **Statistical**: an Isolation Forest (200 trees, fixed random seed) over four ratios: turnout of accredited voters, rejected-ballot share, leading-party share and accreditation of registered voters. Valid ÷ cast is not a separate variable, because for any record that passes arithmetic it equals 1 − rejected share. It runs only when at least `ANOMALY_MIN_SAMPLES` reliable reference records exist (default 30, never below 10). Reliable means human-reviewed (`reviewed` or `verified`), arithmetic passed, one per other polling unit in the same election. Synthetic demonstration records and genuine records are never compared with each other. With fewer records, or fewer than two usable figures on the record, it reports `insufficient_data` and raises no statistical alert.
+   - The record under test is fitted together with the reference. A forest fitted on the reference alone never splits beyond its range, so a record far outside it would score like the most extreme ordinary record.
+   - A record is flagged when its empirical p-value (the share of all scored records at least as isolated) is at most 0.05, so roughly 1 ordinary record in 20 is flagged by chance. The smallest possible p-value is 1 ÷ (reference + 1), so nothing can be flagged with fewer than 19 reference records. Severity is medium when a ratio is also at least 3 robust standard deviations from the reference median, otherwise low.
+   - Incomplete reference records are left out, not imputed, and the summary reports how many. Negative, boolean or non-integer figures are ignored.
 4. **Explainability**: each alert states what was observed, why, which fields contributed (robust z-scores against the reference median), the model name and version, and a recommendation.
 
 Every alert uses the headline **"Anomaly detected — human review required."** The recommendation states that the alert is not a finding of fraud or wrongdoing.
@@ -96,6 +99,21 @@ python -m app.evidence.ai.demo
 ```
 
 The demo prints a statistical analysis over 60 synthetic reference records. Its output is labelled `DEMONSTRATION — synthetic values, not election data` and `is_demo: true`. It is not used by the API.
+
+### DEMO / SYNTHETIC anomaly dataset
+
+`app/evidence/ai/synthetic.py` generates 44 fictional records from a fixed seed: 36 ordinary reviewed records, 4 ordinary new records and 4 deliberately unusual new records (very high accreditation, very high rejected share, one dominant party, and a combination). All are arithmetically consistent, so they are statistical outliers, not arithmetic failures. The record kinds are used for reporting and tests only; the model never sees them.
+
+```bash
+cd backend
+python -m app.evidence.ai.anomaly_demo report     # score all 44 records, no database
+python -m app.evidence.ai.anomaly_demo seed       # dedicated store in var/anomaly-demo
+python -m app.evidence.ai.anomaly_demo cleanup    # removes only that store
+```
+
+`seed` runs every record through the real workflow into the State House of Assembly sample election, in a dedicated SQLite store marked as synthetic (`capture_source = synthetic_anomaly_demo`). Two demo reviewers approve the ordinary reference records. The unusual records stay in `flagged_for_review` for a person to decide. The command refuses production, non-demo elections, an election that already holds non-synthetic records, and any folder it did not create. History tables are append-only, so `cleanup` deletes the dedicated folder as a whole. It refuses if the folder holds any submission the generator did not make.
+
+`scripts/anomaly-demo.sh` seeds that store and starts an API (port 8002) and site (port 5175) over it with a reviewer account.
 
 ## Workflow
 

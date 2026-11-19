@@ -5,6 +5,7 @@ from app.core.config import get_settings
 from app.main import create_app
 from tests.helpers import make_token, unsigned_token
 
+
 def test_me_requires_a_bearer_token(client):
     response = client.get("/api/v1/auth/me")
     assert response.status_code == 401
@@ -59,9 +60,43 @@ def test_auth_fails_closed_when_the_secret_is_unset(monkeypatch):
     token = make_token(roles=["system_admin"])
     with TestClient(application, raise_server_exceptions=False) as test_client:
         response = test_client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {token}"})
-    assert response.status_code == 503
-    assert response.json()["error"]["code"] == "auth_not_configured"
+        admin = test_client.get(
+            "/api/v1/admin/session", headers={"Authorization": f"Bearer {token}"}
+        )
+    # A token that cannot be verified is never accepted and never reveals server config.
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "unauthorized"
+    assert admin.status_code == 401
     get_settings.cache_clear()
+
+def test_malformed_and_forged_tokens_get_401_when_supabase_is_not_configured(monkeypatch):
+    monkeypatch.setenv("SUPABASE_JWT_SECRET", "")
+    get_settings.cache_clear()
+    candidates = [
+        "forged.token.value",
+        "not-a-jwt",
+        "a.b.c",
+        "....",
+        unsigned_token(),
+        make_token(roles=["system_admin"], expired=True),
+        make_token(roles=["system_admin"], secret="another-secret-another-secret-xx"),
+        make_token(roles=["system_admin"]),
+    ]
+    with TestClient(create_app(), raise_server_exceptions=False) as test_client:
+        for token in candidates:
+            response = test_client.get(
+                "/api/v1/auth/me", headers={"Authorization": f"Bearer {token}"}
+            )
+            assert response.status_code == 401, (token[:20], response.text)
+            assert response.json()["error"]["code"] == "unauthorized"
+        assert test_client.get("/api/v1/auth/me").status_code == 401
+    get_settings.cache_clear()
+
+def test_malformed_tokens_get_401_when_supabase_is_configured(client):
+    for token in ("forged.token.value", "not-a-jwt", "a.b.c"):
+        response = client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {token}"})
+        assert response.status_code == 401, token
+        assert response.json()["error"]["code"] == "unauthorized"
 
 def test_validation_errors_do_not_echo_submitted_secrets():
     application = create_app()

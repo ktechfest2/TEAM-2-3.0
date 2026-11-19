@@ -26,7 +26,7 @@ Built-in accounts (`POST /api/v1/auth/login`): passwords are hashed with scrypt 
 
 Supabase tokens, when `SUPABASE_JWT_SECRET` is set: the token must be an HS256 Supabase access token for the `authenticated` audience, signed with `SUPABASE_JWT_SECRET`, and it must include `exp` and `sub`. Tokens signed with the newer Supabase ECC signing keys are rejected. Use the project's legacy JWT secret until that verification is added.
 
-Roles are read only from `app_metadata.roles`. That claim is written with the service role, not by the user. `user_metadata` and the top-level `role` claim (which Supabase sets to `authenticated`) are ignored. Unknown role names are ignored. A missing secret produces 503 `auth_not_configured` rather than a pass.
+Roles are read only from `app_metadata.roles`. That claim is written with the service role, not by the user. `user_metadata` and the top-level `role` claim (which Supabase sets to `authenticated`) are ignored. Unknown role names are ignored. Without `SUPABASE_JWT_SECRET` a Supabase token cannot be verified, so it is refused with 401 like any other invalid token (the server logs a warning, and the response does not reveal how authentication is configured). Built-in account tokens are verified with `AUTH_JWT_SECRET` and are unaffected.
 
 `GET /api/v1/auth/me` returns the principal. `GET /api/v1/admin/session` requires a console role. Neither route returns operational data.
 

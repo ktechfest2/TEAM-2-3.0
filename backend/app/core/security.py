@@ -1,3 +1,4 @@
+import logging
 import uuid
 from typing import Annotated
 
@@ -9,6 +10,8 @@ from pydantic import BaseModel, ConfigDict
 from app.core.config import Settings, get_settings
 from app.core.errors import AppError
 from app.db.enums import ADMIN_CONSOLE_ROLES, Role
+
+logger = logging.getLogger("verivote.security")
 
 _bearer = HTTPBearer(auto_error=False)
 
@@ -68,11 +71,11 @@ def decode_access_token(token: str, settings: Settings) -> Principal:
     if is_local_token(token):
         return _decode_local_token(token, settings)
     if settings.supabase_jwt_secret is None:
-        raise AppError(
-            "auth_not_configured",
-            "Authentication is not configured.",
-            status_code=503,
-        )
+        # Without the secret no Supabase token can be verified, so none is accepted. Answer
+        # 401 like any other bad credential: a 503 here would tell unauthenticated callers
+        # how the server is configured, and would misreport garbage tokens as an outage.
+        logger.warning("rejected a non-built-in token: SUPABASE_JWT_SECRET is not set")
+        raise AppError("unauthorized", "Authentication required.", status_code=401)
     try:
         payload = jwt.decode(
             token,

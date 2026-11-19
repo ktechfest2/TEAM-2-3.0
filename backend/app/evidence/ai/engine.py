@@ -42,6 +42,7 @@ def analyze(
     party_keys: list[str],
     min_samples: int,
     threshold: float,
+    is_demo: bool = False,
 ) -> AnalysisResult:
     from app.evidence.ai.discrepancy import discrepancy_alerts
     from app.evidence.ai.statistical import statistical_analysis
@@ -52,7 +53,7 @@ def analyze(
     if comparison is not None:
         result.alerts += discrepancy_alerts(comparison)
     statistical, alert = statistical_analysis(
-        target_values, reference_values, party_keys, min_samples
+        target_values, reference_values, party_keys, min_samples, is_demo=is_demo
     )
     result.statistical = statistical
     if alert is not None:

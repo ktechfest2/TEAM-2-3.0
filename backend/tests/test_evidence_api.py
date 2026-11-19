@@ -139,6 +139,12 @@ def test_invalid_files_are_rejected(env):
     small = env.submit(observer, make_sheet_image(1, size=(300, 300)))
     assert small.json()["error"]["code"] == "invalid_image"
 
+def test_uploads_cannot_claim_to_be_synthetic_demo_records(env):
+    """Otherwise a real record could opt out of the statistical comparison."""
+    response = env.submit(actor("observer"), capture_source="synthetic_anomaly_demo")
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "validation_error"
+
 def test_size_limit_is_enforced(env, monkeypatch):
     monkeypatch.setenv("EVIDENCE_MAX_BYTES", "100000")
     get_settings.cache_clear()
@@ -495,6 +501,79 @@ def test_verification_needs_two_independent_reviewer_approvals(env):
         e["details"].get("to") for e in audit["events"] if e["action"] == "status.changed"
     ]
     assert transitions[-2:] == ["reviewed", "verified"]
+
+CONFLICTING_LINES = sheet_lines(
+    UNIT.code, parties={"PA": 170, "PB": 90, "PC": 50, "PD": 20}, accredited=400
+)
+
+def test_approval_uses_current_conflicts_not_the_stale_stored_comparison(env):
+    """The first upload was compared when it was alone. A later, conflicting upload for
+    the same polling unit must still require explanatory notes before approving it."""
+    a, b = actor("observer"), actor("party_agent")
+    first = env.submitted(a, seed=31)
+    env.post(a, f"/{first}/validate")
+    assert env.status(a, first) == "cross_checked"
+    second = env.submitted(b, seed=32, lines=CONFLICTING_LINES)
+    env.post(b, f"/{second}/validate")
+
+    reviewer, other_reviewer = actor("reviewer"), actor("reviewer")
+    stored = env.get(reviewer, f"/{first}/comparisons").json()
+    assert [c["has_conflicts"] for c in stored] == [False], "precondition: stored data is stale"
+    assert env.status(a, first) == "cross_checked"
+
+    env.post(reviewer, f"/{first}/review", {"action": "start"})
+    blocked = env.post(reviewer, f"/{first}/review", {"action": "approve"})
+    assert blocked.status_code == 422, blocked.text
+    assert blocked.json()["error"]["code"] == "notes_required"
+    assert "party:PA" in blocked.json()["error"]["details"]["conflicting_fields"]
+    assert env.status(reviewer, first) == "under_human_review"
+    whitespace = env.post(reviewer, f"/{first}/review", {"action": "approve", "notes": "   "})
+    assert whitespace.json()["error"]["code"] == "notes_required"
+
+    notes = "Compared both images. Sheet one matches the printed totals."
+    approved = env.post(reviewer, f"/{first}/review", {"action": "approve", "notes": notes})
+    assert approved.status_code == 200, approved.text
+    assert approved.json()["status"] == "reviewed"
+
+    # The two-person rule still applies, and the second reviewer meets the same notes rule.
+    missing = env.post(other_reviewer, f"/{first}/review", {"action": "approve"})
+    assert missing.json()["error"]["code"] == "notes_required"
+    again = env.post(reviewer, f"/{first}/review", {"action": "approve", "notes": notes})
+    assert again.json()["error"]["code"] == "already_approved"
+    final = env.post(other_reviewer, f"/{first}/review", {"action": "approve", "notes": notes})
+    assert final.json()["status"] == "verified"
+    assert final.json()["approvals"] == 2
+
+    audit = env.get(reviewer, f"/{first}/audit").json()
+    assert audit["chain_valid"] is True
+    recorded = [e["details"] for e in audit["events"] if e["action"] == "review.recorded"]
+    approvals = [d for d in recorded if d["decision"] == "approved"]
+    assert len(approvals) == 2
+    assert all("party:PA" in d["conflicting_fields"] for d in approvals)
+    assert all(d["has_notes"] for d in approvals)
+
+def test_conflict_notes_are_not_needed_once_the_conflicting_upload_is_rejected(env):
+    a, b = actor("observer"), actor("party_agent")
+    first = env.submitted(a, seed=33)
+    env.post(a, f"/{first}/validate")
+    second = env.submitted(b, seed=34, lines=CONFLICTING_LINES)
+    env.post(b, f"/{second}/validate")
+    reviewer, other_reviewer = actor("reviewer"), actor("reviewer")
+
+    env.post(reviewer, f"/{second}/review", {"action": "start"})
+    rejected = env.post(
+        reviewer, f"/{second}/review", {"action": "reject", "notes": "Photo is of another sheet"}
+    )
+    assert rejected.json()["status"] == "rejected"
+
+    env.post(reviewer, f"/{first}/review", {"action": "start"})
+    approved = env.post(reviewer, f"/{first}/review", {"action": "approve"})
+    assert approved.status_code == 200, approved.text
+    final = env.post(other_reviewer, f"/{first}/review", {"action": "approve"})
+    assert final.json()["status"] == "verified"
+    audit = env.get(reviewer, f"/{first}/audit").json()
+    recorded = [e["details"] for e in audit["events"] if e["action"] == "review.recorded"]
+    assert all(d["conflicting_fields"] == [] for d in recorded if d["decision"] == "approved")
 
 def test_corrections_after_approval_require_fresh_validation(env):
     submission_id, _ = ready_for_review(env)

@@ -244,17 +244,64 @@ export function AnomalyPanel({ submissionId }: { submissionId: string }) {
       )}
       {statistical && (
         <section aria-labelledby="stat-heading" className="space-y-1 rounded-lg border p-4 text-sm">
-          <h3 id="stat-heading" className="font-semibold">
-            Statistical analysis
-          </h3>
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 id="stat-heading" className="font-semibold">
+              Statistical analysis
+            </h3>
+            {statistical.is_demo && <Badge variant="warning">DEMO / SYNTHETIC</Badge>}
+            {statistical.is_outlier && <Badge variant="outline">Statistical outlier</Badge>}
+          </div>
           {statistical.status === 'insufficient_data' ? (
             <p className="text-muted-foreground">{statistical.detail}</p>
           ) : (
-            <p className="text-muted-foreground">
-              Compared with {statistical.reference_records} human-reviewed records using{' '}
-              {statistical.variables.map(fieldLabel).join(', ')}. Anomaly score {statistical.anomaly_score} (lower is more
-              unusual).
-            </p>
+            <>
+              <p className="text-muted-foreground">
+                Compared with {statistical.reference_records} human-reviewed records using{' '}
+                {statistical.variables.map(fieldLabel).join(', ')}. Anomaly score {statistical.anomaly_score} (lower is
+                more unusual)
+                {statistical.empirical_p_value &&
+                  `; p = ${statistical.empirical_p_value}, flagged at p ≤ ${statistical.alpha ?? 0.05}`}
+                .
+              </p>
+              <p className="text-muted-foreground">
+                This compares figures with other reviewed records only. Arithmetic checks and differences between
+                submissions are reported separately, and an outlier is not evidence of wrongdoing.
+              </p>
+              {statistical.contributing_fields && statistical.contributing_fields.length > 0 && (
+                <table className="w-full text-left text-xs">
+                  <caption className="sr-only">How each ratio compares with the reviewed records</caption>
+                  <thead className="text-muted-foreground">
+                    <tr>
+                      <th scope="col" className="py-1 font-medium">
+                        Ratio
+                      </th>
+                      <th scope="col" className="py-1 font-medium">
+                        This record
+                      </th>
+                      <th scope="col" className="py-1 font-medium">
+                        Typical
+                      </th>
+                      <th scope="col" className="py-1 font-medium">
+                        Robust z
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {statistical.contributing_fields.map((c) => (
+                      <tr key={c.variable} className={c.unusual ? 'font-semibold' : undefined}>
+                        <td className="py-1">{c.description}</td>
+                        <td className="py-1">{c.value}</td>
+                        <td className="py-1">{c.reference_median}</td>
+                        <td className="py-1">
+                          {c.robust_z}
+                          {c.unusual && ' (unusual)'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </>
           )}
           <p className="text-xs text-muted-foreground">
             {statistical.model_name} · {statistical.model_version}

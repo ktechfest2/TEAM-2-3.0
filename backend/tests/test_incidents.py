@@ -18,6 +18,7 @@ from app.incidents.service import ENTITY_INCIDENT, normalise_reference
 from tests.evidence_support import actor
 from tests.platform_support import CHANNEL_ELECTION, Platform, photo, unit_by_code
 
+
 @pytest.fixture()
 def platform(tmp_path) -> Iterator[Platform]:
     p = Platform(tmp_path)

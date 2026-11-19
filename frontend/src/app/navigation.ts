@@ -36,6 +36,12 @@ export const PUBLIC_NAV: NavItem[] = [
   { label: 'Updates', to: '/updates', icon: MegaphoneIcon },
 ]
 
+export function publicNavItem(to: string): NavItem {
+  const item = PUBLIC_NAV.find((entry) => entry.to === to)
+  if (!item) throw new Error(`Unknown public route: ${to}`)
+  return item
+}
+
 export const REPORT_INCIDENT_NAV: NavItem = {
   label: 'Report an incident',
   to: '/report-incident',

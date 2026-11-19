@@ -9,7 +9,7 @@ import {
   syncEvidence,
   type NewDraft,
 } from '@/features/evidence/evidence-queue'
-import type { EvidenceDetail, Extraction, SubmissionReceipt } from '@/features/evidence/types'
+import type { EvidenceDetail, Extraction, StatisticalSummary, SubmissionReceipt } from '@/features/evidence/types'
 import { ApiError, setAccessTokenProvider } from '@/lib/api-client'
 import { VeriVoteDatabase } from '@/lib/offline/db'
 import { GENERATED_AT, DEMO_SOURCE, route } from '@/test/mock-api'
@@ -237,7 +237,7 @@ function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
 }
 
-function installEvidenceApi(item: EvidenceDetail = detail()) {
+function installEvidenceApi(item: EvidenceDetail = detail(), statistical: StatisticalSummary | null = null) {
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(String(input), 'http://api.test')
     const path = url.pathname.replace(/^.*\/api\/v1/, '')
@@ -251,7 +251,7 @@ function installEvidenceApi(item: EvidenceDetail = detail()) {
     if (path === `/evidence/${item.id}/anomalies`) {
       return json({
         disclaimer: 'VoteTrace AI flags patterns for human review. It does not determine fraud, reject results or change values.',
-        statistical_analysis: null,
+        statistical_analysis: statistical,
         alerts: [
           {
             id: 'a-1',
@@ -314,6 +314,55 @@ describe('evidence screens', () => {
     expect(await within(panel).findByText('Anomaly detected. Human review required.')).toBeInTheDocument()
     expect(within(panel).getByText(/does not determine fraud/i)).toBeInTheDocument()
     expect(within(panel).queryByText(/fraudulent/i)).not.toBeInTheDocument()
+  })
+
+  it('explains a statistical outlier ratio by ratio and keeps it apart from other checks', async () => {
+    installEvidenceApi(detail(), {
+      status: 'analysed',
+      model_name: 'isolation-forest',
+      model_version: 'sklearn-1.7/features-v1/empirical-p-v1',
+      variables: ['rejected_share', 'turnout_of_accredited'],
+      reference_records: 36,
+      excluded_reference_records: 0,
+      min_samples: 30,
+      is_demo: true,
+      anomaly_score: '-0.1751',
+      empirical_p_value: '0.0270',
+      alpha: 0.05,
+      is_outlier: true,
+      contributing_fields: [
+        {
+          variable: 'rejected_share',
+          description: 'Rejected votes ÷ votes cast',
+          value: '0.2400',
+          reference_median: '0.0250',
+          robust_z: '18.52',
+          unusual: true,
+        },
+        {
+          variable: 'turnout_of_accredited',
+          description: 'Votes cast ÷ accredited voters',
+          value: '0.9950',
+          reference_median: '0.9950',
+          robust_z: '0.00',
+          unusual: false,
+        },
+      ],
+    })
+    renderRoute('/admin/evidence/ev-1', reviewer)
+    expect(await screen.findByRole('heading', { level: 1, name: /DEMO-02-01-01-001/ }, { timeout: 8_000 })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('tab', { name: 'AI anomaly report' }))
+    const section = await screen.findByRole('region', { name: /Statistical analysis/ })
+    expect(within(section).getByText('DEMO / SYNTHETIC')).toBeInTheDocument()
+    expect(within(section).getByText('Statistical outlier')).toBeInTheDocument()
+    expect(within(section).getByText(/p = 0.0270, flagged at p ≤ 0.05/)).toBeInTheDocument()
+    expect(within(section).getByText(/Arithmetic checks and differences between submissions are reported separately/)).toBeInTheDocument()
+    const rows = within(within(section).getByRole('table')).getAllByRole('row')
+    expect(rows).toHaveLength(3)
+    expect(within(rows[1]!).getByText('Rejected votes ÷ votes cast')).toBeInTheDocument()
+    expect(within(rows[1]!).getByText('18.52 (unusual)')).toBeInTheDocument()
+    expect(within(rows[2]!).queryByText(/unusual/)).not.toBeInTheDocument()
+    expect(within(section).queryByText(/fraud/i)).not.toBeInTheDocument()
   })
 
   it('hides staff-only analysis and review controls from submitters', async () => {

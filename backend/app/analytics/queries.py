@@ -599,6 +599,21 @@ def polling_units(
         generated_at=_now(),
     )
 
+def check_counts(report: dict[str, Any]) -> tuple[int, int, int]:
+    """(passed, failed, warnings) from a stored validation report.
+
+    Each stored check carries an `outcome` (passed, failed or not_evaluated) and a
+    `severity`. Only error-severity failures count as failed. Warning-severity failures
+    and checks that could not be evaluated are counted once, as warnings, using the
+    same list the validator publishes."""
+    checks = report.get("checks", [])
+    passed = sum(1 for c in checks if c.get("outcome") == "passed")
+    failed = sum(
+        1 for c in checks if c.get("outcome") == "failed" and c.get("severity", "error") == "error"
+    )
+    return passed, failed, len(report.get("warnings", []))
+
+
 def polling_unit_result(ctx: Context, polling_unit_id: uuid.UUID) -> PollingUnitResultResponse:
     unit = ctx.registry.units.get(polling_unit_id)
     if unit is None:
@@ -650,11 +665,7 @@ def polling_unit_result(ctx: Context, polling_unit_id: uuid.UUID) -> PollingUnit
     if representative is not None:
         validation = latest_validation(ctx.db, representative.id)
         if validation is not None:
-            report = validation.report
-            checks = report.get("checks", [])
-            checks_passed = sum(1 for c in checks if c.get("status") == "passed")
-            checks_failed = sum(1 for c in checks if c.get("status") == "failed")
-            warnings = len(report.get("warnings", []))
+            checks_passed, checks_failed, warnings = check_counts(validation.report)
             if row and row.verified_result_hash:
                 approvals = len(approvals_for(ctx.db, representative, validation.result_hash))
 

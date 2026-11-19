@@ -66,6 +66,28 @@ def test_admin_signs_in_and_reaches_admin_routes(api):
     assert api.get("/api/v1/admin/session", headers=headers).status_code == 200
     assert api.get("/api/v1/admin/users", headers=headers).status_code == 200
 
+def test_built_in_accounts_work_and_forged_tokens_get_401_without_supabase(api, monkeypatch):
+    monkeypatch.setenv("SUPABASE_JWT_SECRET", "")
+    get_settings.cache_clear()
+    headers = admin_headers(api)
+    assert api.get("/api/v1/auth/me", headers=headers).json()["roles"] == ["system_admin"]
+    assert api.get("/api/v1/admin/session", headers=headers).status_code == 200
+
+    forged = [
+        "forged.token.value",
+        make_token(roles=["system_admin"]),
+        # Claims to be a built-in token but is signed with the wrong key.
+        jwt.encode(
+            {"iss": "verivote", "aud": "authenticated", "sub": "x", "ver": 1, "exp": 4102444800},
+            "wrong-key-wrong-key-wrong-key-wrong-key",
+            algorithm="HS256",
+        ),
+    ]
+    for token in forged:
+        response = api.get("/api/v1/auth/me", headers=bearer(token))
+        assert response.status_code == 401, token[:20]
+        assert response.json()["error"]["code"] == "unauthorized"
+
 def test_wrong_password_and_unknown_email_look_the_same(api):
     wrong = login(api, ADMIN_EMAIL, "Wrong-password-1")
     unknown = login(api, "nobody@verivote.ng", "Wrong-password-1")

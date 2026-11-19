@@ -545,6 +545,35 @@ def test_provenance_traces_totals_to_source_records(world, client):
         "polling_unit",
     ]
 
+def test_public_report_counts_the_checks_that_were_stored(world, client):
+    unit_id = _units_of_ward(_big_ward())[0]
+    submission = world.verified(unit_id, values_for(unit_id))
+    stored = service.latest_validation(world.db, submission.id).report["checks"]
+    assert stored and all("outcome" in c and "status" not in c for c in stored)
+    expected_passed = sum(1 for c in stored if c["outcome"] == "passed")
+    assert expected_passed > 0
+
+    detail = client.get(
+        f"/api/v1/analytics/polling-units/{unit_id}", params={"election_id": str(ELECTION.id)}
+    ).json()["verification"]
+    assert detail["checks_passed"] == expected_passed
+    assert detail["checks_failed"] == 0
+    assert detail["warnings"] == 0
+
+def test_check_counts_separate_passed_failed_and_warnings():
+    report = {
+        "checks": [
+            {"rule_id": "a", "severity": "error", "outcome": "passed"},
+            {"rule_id": "b", "severity": "error", "outcome": "passed"},
+            {"rule_id": "c", "severity": "error", "outcome": "failed"},
+            {"rule_id": "d", "severity": "warning", "outcome": "failed"},
+            {"rule_id": "e", "severity": "warning", "outcome": "not_evaluated"},
+        ],
+        "warnings": ["d", "e"],
+    }
+    assert queries.check_counts(report) == (2, 1, 2)
+    assert queries.check_counts({}) == (0, 0, 0)
+
 def test_public_read_only_access_without_private_details(world, client):
     unit_id = _units_of_ward(_big_ward())[0]
     world.verified(unit_id, values_for(unit_id))

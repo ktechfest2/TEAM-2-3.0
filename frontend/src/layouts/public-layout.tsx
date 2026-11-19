@@ -2,21 +2,21 @@ import { MenuIcon } from 'lucide-react'
 import { useState } from 'react'
 import { Link, NavLink, Outlet, useLocation } from 'react-router'
 import type { NavItem } from '@/app/navigation'
-import { PUBLIC_NAV, REPORT_INCIDENT_NAV } from '@/app/navigation'
+import { PUBLIC_NAV, publicNavItem, REPORT_INCIDENT_NAV } from '@/app/navigation'
 import { useRouteMeta } from '@/app/seo'
 import { Logo } from '@/components/brand/logo'
 import { LanguageSwitcher } from '@/components/i18n/language-switcher'
 import { OfflineBanner } from '@/components/layout/offline-banner'
 import { RouteProgress } from '@/components/layout/route-progress'
 import { Button } from '@/components/ui/button'
-import { Sheet, SheetContent, SheetDescription, SheetTitle, SheetTrigger } from '@/components/ui/sheet'
+import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet'
 import { useT } from '@/i18n/locale-provider'
 import { cn } from '@/lib/utils'
 
 const APP_TABS: { item: NavItem; short: string }[] = [
-  { item: PUBLIC_NAV[0], short: 'Home' },
-  { item: PUBLIC_NAV[2], short: 'Results' },
-  { item: PUBLIC_NAV[1], short: 'Find' },
+  { item: publicNavItem('/'), short: 'Home' },
+  { item: publicNavItem('/results'), short: 'Results' },
+  { item: publicNavItem('/polling-units'), short: 'Find' },
   { item: REPORT_INCIDENT_NAV, short: 'Report' },
 ]
 
@@ -33,21 +33,19 @@ export function PublicLayout() {
   const [mobileOpen, setMobileOpen] = useState(false)
   const { pathname } = useLocation()
   const isHome = pathname === '/'
+  const participateLinks = [
+    { to: REPORT_INCIDENT_NAV.to, label: t(REPORT_INCIDENT_NAV.label) },
+    { to: '/incidents', label: t('Incident summary') },
+    { to: '/phone-access', label: t('USSD and SMS access') },
+    { to: '/evidence/submit', label: t('Submit evidence') },
+    { to: '/admin', label: t('Staff sign-in') },
+  ]
   const footer = [
     {
       title: t('Explore'),
       links: PUBLIC_NAV.slice(1).map((item) => ({ to: item.to, label: t(item.label) })),
     },
-    {
-      title: t('Participate'),
-      links: [
-        { to: REPORT_INCIDENT_NAV.to, label: t(REPORT_INCIDENT_NAV.label) },
-        { to: '/incidents', label: t('Incident summary') },
-        { to: '/phone-access', label: t('USSD and SMS access') },
-        { to: '/evidence/submit', label: t('Submit evidence') },
-        { to: '/admin', label: t('Staff sign-in') },
-      ],
-    },
+    { title: t('Participate'), links: participateLinks },
     {
       title: t('About'),
       links: [
@@ -122,7 +120,7 @@ export function PublicLayout() {
                         {t(item.label)}
                       </NavLink>
                     ))}
-                    {footer[1].links
+                    {participateLinks
                       .filter((link) => link.to !== REPORT_INCIDENT_NAV.to)
                       .map((link) => (
                         <Link

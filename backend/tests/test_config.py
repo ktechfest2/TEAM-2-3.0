@@ -5,6 +5,7 @@ from app.core.config import Settings
 from app.core.logging import redact, redact_text
 from app.db.session import get_engine
 
+
 def test_database_url_uses_the_psycopg_driver():
     settings = Settings(database_url="postgres://app:secret@localhost:5432/verivote")
     assert settings.database_url == "postgresql+psycopg://app:secret@localhost:5432/verivote"

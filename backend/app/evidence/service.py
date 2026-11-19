@@ -53,6 +53,8 @@ from app.schemas.polling_units import PollingUnitDetail
 logger = logging.getLogger("verivote.evidence")
 
 S = EvidenceStatus
+# Provenance capture_source of records made by app.evidence.ai.anomaly_demo.
+SYNTHETIC_SOURCE = "synthetic_anomaly_demo"
 _EXTENSIONS = {"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp"}
 
 def get_submission(db: Session, submission_id: uuid.UUID) -> EvidenceSubmission:
@@ -181,6 +183,13 @@ def ingest(
                 409,
             )
         return existing, False
+
+    if upload.client_info.get("capture_source") == SYNTHETIC_SOURCE and not election.is_demo:
+        raise AppError(
+            "synthetic_not_allowed",
+            "Synthetic demonstration records may only be added to a demo election.",
+            422,
+        )
 
     validated = validate_image(
         upload.data,
@@ -629,6 +638,60 @@ def _field_view(row: ExtractedResultField) -> dict[str, Any]:
 def _snapshot_values(validation: ResultValidation) -> dict[str, int | str | None]:
     return {key: value for key, value in validation.result_snapshot["fields"]}
 
+def _snapshot(db: Session, submission: EvidenceSubmission, values: dict) -> SubmissionSnapshot:
+    return SubmissionSnapshot(
+        id=submission.id,
+        submitted_by=submission.submitted_by,
+        received_at=submission.received_at,
+        original_sha256=submission.original_sha256,
+        perceptual_hash=original_image(db, submission.id).perceptual_hash,
+        values=values,
+    )
+
+
+def _other_snapshots(db: Session, submission: EvidenceSubmission) -> list[SubmissionSnapshot]:
+    """Every other non-rejected submission for the same election and polling unit that has
+    been validated at least once, with the figures from its latest validation."""
+    others = db.scalars(
+        select(EvidenceSubmission).where(
+            EvidenceSubmission.election_id == submission.election_id,
+            EvidenceSubmission.polling_unit_id == submission.polling_unit_id,
+            EvidenceSubmission.id != submission.id,
+            EvidenceSubmission.workflow_status != S.REJECTED,
+        )
+    )
+    snapshots: list[SubmissionSnapshot] = []
+    for other in others:
+        other_validation = latest_validation(db, other.id)
+        if other_validation is None:
+            continue
+        snapshots.append(_snapshot(db, other, _snapshot_values(other_validation)))
+    return snapshots
+
+
+def current_conflicting_fields(
+    db: Session, submission: EvidenceSubmission, validation: ResultValidation
+) -> list[str]:
+    """Fields on which this submission disagrees with the other live submissions for the
+    same polling unit, worked out now.
+
+    The comparison stored at validation time only covers the submissions that existed
+    then, so it goes stale as later uploads arrive. Approval decisions use this instead."""
+    stored = latest_comparison(db, submission.id)
+    values = _snapshot_values(validation)
+    if stored is not None and stored.report.get("compared_fields"):
+        fields = list(stored.report["compared_fields"])
+    else:
+        fields = sorted(key for key, value in values.items() if isinstance(value, int))
+    report = compare_submissions(
+        _snapshot(db, submission, values),
+        _other_snapshots(db, submission),
+        fields,
+        datetime.now(UTC),
+    )
+    return list(report["conflicting_fields"])
+
+
 def validate(
     db: Session,
     submission: EvidenceSubmission,
@@ -668,31 +731,7 @@ def validate(
     # been validated at least once.
     party_keys = [party_key(p.code) for p in election.parties]
     compared_fields = [s.key for s in template.fields if s.kind == "integer"] + party_keys
-    others = list(
-        db.scalars(
-            select(EvidenceSubmission).where(
-                EvidenceSubmission.election_id == submission.election_id,
-                EvidenceSubmission.polling_unit_id == submission.polling_unit_id,
-                EvidenceSubmission.id != submission.id,
-                EvidenceSubmission.workflow_status != S.REJECTED,
-            )
-        )
-    )
-    snapshots: list[SubmissionSnapshot] = []
-    for other in others:
-        other_validation = latest_validation(db, other.id)
-        if other_validation is None:
-            continue
-        snapshots.append(
-            SubmissionSnapshot(
-                id=other.id,
-                submitted_by=other.submitted_by,
-                received_at=other.received_at,
-                original_sha256=other.original_sha256,
-                perceptual_hash=original_image(db, other.id).perceptual_hash,
-                values=_snapshot_values(other_validation),
-            )
-        )
+    snapshots = _other_snapshots(db, submission)
     target = SubmissionSnapshot(
         id=submission.id,
         submitted_by=submission.submitted_by,
@@ -724,6 +763,7 @@ def validate(
         party_keys=party_keys,
         min_samples=settings.anomaly_min_samples,
         threshold=settings.ocr_confidence_threshold,
+        is_demo=election.is_demo,
     )
     for alert in analysis.alerts:
         db.add(
@@ -832,7 +872,12 @@ def _reliable_reference(
     db: Session, submission: EvidenceSubmission
 ) -> list[dict[str, int | str | None]]:
     """Human-reviewed records of the same election, one per polling unit, excluding this
-    polling unit. Only these are trustworthy enough to describe what is typical."""
+    polling unit. Only these are trustworthy enough to describe what is typical.
+
+    Synthetic demonstration records and genuine records never describe each other: a
+    synthetic record is compared only with synthetic ones, a genuine record only with
+    genuine ones."""
+    synthetic = is_synthetic(submission)
     rows = db.scalars(
         select(EvidenceSubmission)
         .where(
@@ -845,7 +890,7 @@ def _reliable_reference(
     seen: set[uuid.UUID] = set()
     reference = []
     for row in rows:
-        if row.polling_unit_id in seen:
+        if row.polling_unit_id in seen or is_synthetic(row) != synthetic:
             continue
         validation = latest_validation(db, row.id)
         if validation is None or not validation.passed:
@@ -853,6 +898,11 @@ def _reliable_reference(
         seen.add(row.polling_unit_id)
         reference.append(_snapshot_values(validation))
     return reference
+
+
+def is_synthetic(submission: EvidenceSubmission) -> bool:
+    """Created by the synthetic anomaly-demonstration generator."""
+    return (submission.provenance or {}).get("capture_source") == SYNTHETIC_SOURCE
 
 ReviewAction = str
 REVIEW_ACTIONS = ("start", "approve", "reject", "request_correction")
@@ -905,7 +955,7 @@ def review(
     current_hash = current_result_hash(db, submission)
     ensure_user(db, actor)
 
-    def record(decision: ReviewDecision) -> EvidenceReview:
+    def record(decision: ReviewDecision, **extra: Any) -> EvidenceReview:
         row = EvidenceReview(
             submission_id=submission.id,
             reviewer_id=actor.user_id,
@@ -927,6 +977,7 @@ def review(
                 "result_hash": current_hash,
                 "validation_id": row.validation_id,
                 "has_notes": notes is not None,
+                **extra,
             },
         )
         return row
@@ -971,20 +1022,24 @@ def review(
                 409,
                 details={"fields": unresolved},
             )
+        # Worked out now, not read from the comparison stored at validation time: uploads
+        # that arrived after that comparison may disagree with this one.
+        conflicting = current_conflicting_fields(db, submission, validation)
         flagged = bool(
             validation.report.get("warnings")
             or _run_alerts(db, submission.id, validation)
-            or (latest_comparison(db, submission.id) or _NO_COMPARISON).has_conflicts
+            or conflicting
         )
         if flagged and not notes:
             raise AppError(
                 "notes_required",
                 "Explain how the flagged issues were resolved before approving.",
                 422,
+                details={"conflicting_fields": conflicting} if conflicting else None,
             )
         if any(a.reviewer_id == actor.user_id for a in approvals_for(db, submission, current_hash)):
             raise AppError("already_approved", "You have already approved this result.", 409)
-        row = record(ReviewDecision.APPROVED)
+        row = record(ReviewDecision.APPROVED, conflicting_fields=conflicting)
         if status == S.UNDER_HUMAN_REVIEW:
             workflow.transition(
                 db, submission, S.REVIEWED, actor_id=actor.user_id, reason="approved"
@@ -1029,12 +1084,6 @@ def review(
 
     db.commit()
     return row
-
-@dataclass(frozen=True)
-class _EmptyComparison:
-    has_conflicts: bool = False
-
-_NO_COMPARISON = _EmptyComparison()
 
 def _run_alerts(db: Session, submission_id: uuid.UUID, validation: ResultValidation) -> list:
     run_id = validation.report.get("analysis_run_id")

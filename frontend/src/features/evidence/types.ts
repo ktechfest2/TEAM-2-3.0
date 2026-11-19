@@ -247,17 +247,30 @@ export type AnomalyAlert = {
   created_at: string
 }
 
+export type StatisticalContribution = {
+  variable: string
+  description: string
+  value: string
+  reference_median: string
+  robust_z: string
+  unusual: boolean
+}
+
 export type StatisticalSummary = {
   status: 'insufficient_data' | 'analysed'
   model_name: string
   model_version: string
   variables: string[]
   reference_records: number
+  excluded_reference_records?: number
   min_samples: number
   is_demo: boolean
   detail?: string
   anomaly_score?: string
+  empirical_p_value?: string
+  alpha?: number
   is_outlier?: boolean
+  contributing_fields?: StatisticalContribution[]
 }
 
 export type AnomalyReport = {
