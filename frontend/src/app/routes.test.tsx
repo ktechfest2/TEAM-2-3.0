@@ -41,6 +41,12 @@ describe('admin routes', () => {
     expect(router.state.location.pathname).toBe('/admin/sign-in')
   })
 
+  it('keeps the sign-in form open for an account that cannot enter admin', async () => {
+    renderRoute('/admin/sign-in', makeAuthState({ id: 'u2', email: 'obs@example.ng', roles: ['observer'] }))
+    expect(await screen.findByLabelText('Password')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Sign in' })).toBeInTheDocument()
+  })
+
   it('blocks authenticated users without an admin role', async () => {
     renderRoute('/admin', makeAuthState({ id: 'u2', email: 'obs@example.ng', roles: ['observer'] }))
     expect(await screen.findByText('You do not have access to this area')).toBeInTheDocument()

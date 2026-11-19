@@ -34,7 +34,7 @@ describe('public layout', () => {
     expect(hrefOf('Incident summary')).toBe('/incidents')
     expect(hrefOf('USSD and SMS access')).toBe('/phone-access')
     expect(hrefOf('Submit evidence')).toBe('/evidence/submit')
-    expect(hrefOf('Staff sign-in')).toBe('/admin')
+    expect(hrefOf('Staff sign-in')).toBe('/admin/sign-in')
     expect(within(mobileNav).getAllByRole('link', { name: REPORT_INCIDENT_NAV.label })).toHaveLength(1)
   })
 

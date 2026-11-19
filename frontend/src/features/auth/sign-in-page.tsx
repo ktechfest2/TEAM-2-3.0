@@ -13,6 +13,7 @@ import { Input } from '@/components/ui/input'
 import { Spinner } from '@/components/ui/spinner'
 import { useAuth } from '@/features/auth/auth-context'
 import { destinationFor } from '@/features/auth/destination'
+import { ADMIN_CONSOLE_ROLES, hasAnyRole } from '@/features/auth/roles'
 import { useT } from '@/i18n/locale-provider'
 
 const signInSchema = z.object({
@@ -40,7 +41,9 @@ export function SignInPage() {
     formState: { errors, isSubmitting },
   } = useForm<SignInValues>({ resolver: zodResolver(signInSchema) })
 
-  if (status === 'authenticated' && user && !isPreview) {
+  // Staff go straight to their area. Other signed-in accounts stay on this form
+  // so they can sign in with a staff email and password.
+  if (status === 'authenticated' && user && !isPreview && (user.mustChangePassword || hasAnyRole(user.roles, ADMIN_CONSOLE_ROLES))) {
     return <Navigate to={destinationFor(user, from)} replace state={{ from }} />
   }
 

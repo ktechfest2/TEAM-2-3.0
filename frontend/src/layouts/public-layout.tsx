@@ -10,6 +10,7 @@ import { OfflineBanner } from '@/components/layout/offline-banner'
 import { RouteProgress } from '@/components/layout/route-progress'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet'
+import { SIGN_IN_PATH } from '@/features/auth/destination'
 import { useT } from '@/i18n/locale-provider'
 import { cn } from '@/lib/utils'
 
@@ -38,7 +39,7 @@ export function PublicLayout() {
     { to: '/incidents', label: t('Incident summary') },
     { to: '/phone-access', label: t('USSD and SMS access') },
     { to: '/evidence/submit', label: t('Submit evidence') },
-    { to: '/admin', label: t('Staff sign-in') },
+    { to: SIGN_IN_PATH, label: t('Staff sign-in') },
   ]
   const footer = [
     {
@@ -89,7 +90,7 @@ export function PublicLayout() {
             </nav>
 
             <div className="ml-auto flex items-center gap-3 sm:gap-5">
-              <Link to="/admin" className="hidden text-[15px] font-medium text-navy hover:opacity-70 lg:inline-flex">
+              <Link to={SIGN_IN_PATH} className="hidden text-[15px] font-medium text-navy hover:opacity-70 lg:inline-flex">
                 {t('Staff sign-in')}
               </Link>
               <Button asChild className="hidden h-10 px-[18px] sm:inline-flex">
